@@ -41,7 +41,8 @@ use EasyRdf\Graph;
 class ValueMapper {
 
     private $client;
-    private $cache = [];
+    private $cache  = [];
+    private $failed = [];
 
     /**
      * 
@@ -66,7 +67,7 @@ class ValueMapper {
      * @return array  mapped values
      */
     public function getMapping(string $value, string $property): array {
-        if (!isset($this->cache[$value])) {
+        if (!isset($this->cache[$value]) && !isset($this->failed[$value])) {
             $this->fetch($value);
         }
         $values = [];
@@ -92,6 +93,8 @@ class ValueMapper {
             $graph = new Graph();
             $graph->parse((string) $resp->getBody(), $mime);
             $this->cache[$value] = $graph->resource($value);
+        } else {
+            $this->failed[$value] = true;
         }
     }
 
