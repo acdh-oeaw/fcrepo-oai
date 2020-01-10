@@ -311,6 +311,7 @@ TMPL;
         echo "    <" . $verb . ">\n";
         try {
             for ($i = 0; $i < $search->getCount(); $i++) {
+                $recordFlag   = $metadataFlag = false;
                 try {
                     $headerData = $search->getHeader($i);
                     $header = $this->createHeader($headerData);
@@ -319,8 +320,10 @@ TMPL;
                         echo $header->C14N() . "\n";
                     } else {
                         echo "<record>\n";
+                        $recordFlag   = true;
                         echo $header->C14N() . "\n";
                         echo "<metadata>";
+                        $metadataFlag = true;
                         if ($this->cache !== null) {
                             if ($reloadCache || !$this->cache->check($headerData, $format)) {
                                 $xml = $search->getMetadata($i)->getXml();
@@ -331,11 +334,11 @@ TMPL;
                             $xml = $search->getMetadata($i)->getXml();
                             echo $xml->C14N();
                         }
-                        echo "</metadata>\n";
-                        echo "</record>\n";
                     }
                 } catch (OaiException $e) {
                     //echo $e;
+                } finally {
+                    echo ($metadataFlag ? "</metadata>\n" : '') . ($recordFlag ? "</record>\n" : '');
                 }
             }
         } finally {
