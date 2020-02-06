@@ -12,7 +12,7 @@
         <cmd:MdCreationDate val="NOW"></cmd:MdCreationDate>
         <cmd:MdSelfLink val="OAIURI"></cmd:MdSelfLink>
         <cmd:MdProfile>clarin.eu:cr1:p_1288172614023</cmd:MdProfile>
-        <cmd:MdCollectionDisplayName val="/acdh:hasTitle"></cmd:MdCollectionDisplayName>
+        <cmd:MdCollectionDisplayName>ARCHE repository</cmd:MdCollectionDisplayName>
     </cmd:Header>
     <cmd:Resources>
         <cmd:ResourceProxyList>
