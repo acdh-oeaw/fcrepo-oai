@@ -115,6 +115,8 @@ use acdhOeaw\oai\data\MetadataFormat;
  */
 class LiveCmdiMetadata implements MetadataInterface {
 
+    const FAKE_ROOT_TAG = 'fakeRoot';
+
     static private $mapper;
 
     /**
@@ -172,13 +174,27 @@ class LiveCmdiMetadata implements MetadataInterface {
 
     /**
      * Creates resource's XML metadata
-     * 
+     *
+     * If the template's root element has an `val` attribute a fake
+     * root element is introduced to the template to assure it will be a valid
+     * XML after the substitution (XML documents have to have a single root
+     * element).
+     *
      * @return DOMElement 
      */
     public function getXml(): DOMElement {
         $doc                     = new DOMDocument();
         $doc->preserveWhiteSpace = false;
         $doc->load($this->template);
+
+        // a special case when a single root element might be missing
+        $el = $doc->documentElement;
+        if ($el->getAttribute('val') !== '') {
+            $oldRoot = $doc->removeChild($el);
+            $newRoot = $doc->createElement(self::FAKE_ROOT_TAG);
+            $doc->appendChild($newRoot);
+            $newRoot->appendChild($oldRoot);
+        }
         $this->processElement($doc->documentElement);
         return $doc->documentElement;
     }
@@ -256,9 +272,9 @@ class LiveCmdiMetadata implements MetadataInterface {
             $el->textContent = $this->format->info->baseURL . '?verb=GetRecord&metadataPrefix=' . $prefix . '&identifier=' . $id;
             $remove          = false;
         } else if ($val !== '') {
-            list('prop' => $prop, 'subprop' => $subprop, 'extUriProp' => $extUriProp, 'inverse' => $inverse) = $this->parseVal($val);
-            if ($inverse) {
-                $meta = $this->getInverseResources($prop);
+            list('prop' => $prop, 'recursive' => $recursive, 'subprop' => $subprop, 'extUriProp' => $extUriProp, 'inverse' => $inverse) = $this->parseVal($val);
+            if ($recursive || $inverse) {
+                $meta = $this->getResourcesByPath($prop, $recursive, $inverse);
             } else {
                 $meta = $this->res->getMetadata();
             }
@@ -288,6 +304,7 @@ class LiveCmdiMetadata implements MetadataInterface {
      * 
      * The components are:
      * - `prop` the metadata property to be read
+     * - `recursive` should the property be follow recursively?
      * - `subprop` the YAML object key (null if the property value should be
      *   taken as it is)
      * - `extUriProp` if `prop` value points to a resource, metadata property
@@ -300,12 +317,17 @@ class LiveCmdiMetadata implements MetadataInterface {
      * @return array
      */
     private function parseVal(string $val): array {
+        $recursive  = false;
         $inverse    = false;
         $extUriProp = null;
         $prop       = substr($val, 1);
         if (substr($val, 0, 1) === '@') {
             $tmp  = explode('/', $prop);
             $prop = $tmp[0];
+            if (substr($prop, -1) === '*') {
+                $recursive = true;
+                $prop      = substr($prop, 0, -1);
+            }
             if (count($tmp) > 1) {
                 $extUriProp = $this->replacePropNmsp($tmp[1]);
             }
@@ -323,6 +345,7 @@ class LiveCmdiMetadata implements MetadataInterface {
         }
         return [
             'prop'       => $prop,
+            'recursive'  => $recursive,
             'subprop'    => $subprop,
             'extUriProp' => $extUriProp,
             'inverse'    => $inverse,
@@ -370,11 +393,17 @@ class LiveCmdiMetadata implements MetadataInterface {
                 $res->setMetadata($meta);
                 $componentObj = new LiveCmdiMetadata($res, new stdClass(), $format);
                 $componentXml = $componentObj->getXml();
-                $componentXml = $el->ownerDocument->importNode($componentXml, true);
-                $el->parentNode->appendChild($componentXml);
+                if ($componentXml->nodeName === self::FAKE_ROOT_TAG) {
+                    foreach ($componentXml->childNodes as $n) {
+                        $nn = $el->ownerDocument->importNode($n, true);
+                        $el->parentNode->appendChild($nn);
+                    }
+                } else {
+                    $componentXml = $el->ownerDocument->importNode($componentXml, true);
+                    $el->parentNode->appendChild($componentXml);
+                }
             }
         } catch (RuntimeException $ex) {
-            
         }
 
         $this->res->setMetadata($oldMeta);
@@ -418,7 +447,6 @@ class LiveCmdiMetadata implements MetadataInterface {
                 $this->collectMetaValue($values, $i, $subprop, $dateFormat);
             }
         }
-
         if ($valueMap) {
             $mapped = [];
             foreach ($values as &$i) {
@@ -528,17 +556,35 @@ class LiveCmdiMetadata implements MetadataInterface {
     }
 
     /**
-     * Prepares fake resource metadata allowing to resolve reverse properties
-     * resource links.
+     * Prepares fake resource metadata allowing to resolve inverse and/or recursively targetted
+     * resources.
      * @param string $prop
+     * @param bool $recursive
+     * @param bool $inverse
      * @return \EasyRdf\Resource
      */
-    private function getInverseResources(string $prop): Resource {
-        $fedora    = $this->res->getFedora();
-        $graph     = new Graph();
-        $meta      = $graph->resource('.');
-        $query     = new SimpleQuery('SELECT ?res WHERE {?res ?@ ?@.}', [$prop, $this->res->getId()]);
-        $resources = $fedora->runQuery($query);
+    private function getResourcesByPath(string $prop, bool $recursive, bool $inverse): Resource {
+        $fedora = $this->res->getFedora();
+        $graph  = new Graph();
+        $meta   = $graph->resource('.');
+        switch (($recursive ? 'r' : '') . ($inverse ? 'i' : '')) {
+            case 'ri':
+                $query = 'SELECT ?res WHERE {?@ (?@ / ^?@)* ?res. MINUS {?res ?@ ?parent.}}';
+                $param = [$this->res->getUri(true), $this->format->idProp, $prop, $prop];
+                break;
+            case 'r':
+                $query = 'SELECT ?res WHERE {?@ (?@ / ^?@)* ?res. MINUS {?res ?@ ?parent.}}';
+                $param = [$this->res->getUri(true), $prop, $this->format->idProp, $prop];
+                break;
+            case 'i':
+                $query = 'SELECT ?res WHERE {?res ?@ ?@.}';
+                $param = [$prop, $this->res->getId()];
+                break;
+            default:
+                throw new RuntimeException('It does not make sense for both $recursive and $inverse to be false'); 
+        }
+
+        $resources = $fedora->runQuery(new SimpleQuery($query, $param));
         foreach ($resources as $i) {
             $res = $fedora->getResourceByUri((string) $i->res);
             $meta->addResource($prop, $res->getId());
