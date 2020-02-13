@@ -87,6 +87,8 @@ use acdhOeaw\oai\data\MetadataFormat;
  *   the language, the `xml:lang` attribute is added to the template tag
  * - `asXML="true"` if present, value specified with the `val` attribute is parsed and added
  *   as XML
+ * - `replaceXMLTag="true"` if present, value specified with the `val` attribute substitus the
+ *   XML tag itself instead of being injected as its value.
  * - `dateFormat="FORMAT"` (default native precision read from the resource metadata value)
  *   can be `Date` or `DateTime` which will automatically adjust date precision.  Watch out
  *   as when present it will also naivly process any string values (cutting them or appending
@@ -97,12 +99,17 @@ use acdhOeaw\oai\data\MetadataFormat;
  *   desired one. The `asXML` attribute takes a precedense.
  *   Doesn't work for special `val` attribute values of `NOW`, `URL` and `OAIURI`.
  * - `valueMapProp="RDFpropertyURL"` causes value denoted by the `val` attribute to be
- *   mapped to another values using a given RDF property. The value must be an URL
- *   (e.g. a SKOS concept URL) which is then resolved to an RDF graph and all the values
+ *   mapped to another values using a given RDF property. The `val` attribute value must be 
+ *   an URL (e.g. a SKOS concept URL) which returns an RDF graph. All `valueMapProp` property
+ *   values from the fetched graph are taken as a template values.
  *   of indicated property are returned.
  * - `valueMapKeepSrc="false"` if present, removes the original value fetched according to the
  *   `val` attribute and returns only values fetched according to the `valueMapProp` attribute.
  *   Taken into account only if `valueMapProp` provided and not empty.
+ * - `ComponentId` specifies a component (template) to substitue a given tag (see the `val`
+ *   attribute description). The component name should match the template file name without the
+ *   .xml extension. When the `ComponentId` is used the actual tag in the template is 
+ *   not important because it's anyway replaced by the component's root tag.
  * 
  * @author zozlak
  */
@@ -271,6 +278,7 @@ class LiveCmdiMetadata implements MetadataInterface {
         $el->removeAttribute('asXML');
         $el->removeAttribute('valueMapProp');
         $el->removeAttribute('valueMapKeepSrc');
+        $el->removeAttribute('replaceXMLTag');
         return $remove;
     }
 
@@ -390,6 +398,7 @@ class LiveCmdiMetadata implements MetadataInterface {
         $format     = $el->getAttribute('format');
         $valueMap   = $el->getAttribute('valueMapProp');
         $keepSrc    = $el->getAttribute('valueMapKeepSrc');
+        $replaceTag = $el->getAttribute('replaceXMLTag');
         if (empty($count)) {
             $count = '1';
         }
@@ -411,18 +420,19 @@ class LiveCmdiMetadata implements MetadataInterface {
         }
 
         if ($valueMap) {
-            foreach ($values as $lang => &$i) {
-                $tmp = [];
+            $mapped = [];
+            foreach ($values as &$i) {
                 foreach ($i as $j) {
-                    $tmp = array_merge($tmp, self::$mapper->getMapping($j, $valueMap));
+                    $mapped = array_merge($mapped, self::$mapper->getMapping($j, $valueMap));
                 }
-                if ($keepSrc) {
-                    $i = array_merge($i, $tmp);
-                } else {
-                    $i = $tmp;
+		if (!$keepSrc) {
+                    $i = [];
                 }
             }
             unset($i);
+            foreach ($mapped as $i) {
+                $this->collectMetaValue($values, $i, null, $dateFormat);
+            }
         }
 
         if (count($values) === 0 && in_array($count, ['1', '+'])) {
@@ -441,24 +451,32 @@ class LiveCmdiMetadata implements MetadataInterface {
         $parent = $el->parentNode;
         foreach ($values as $language => $tmp) {
             foreach ($tmp as $value) {
-                $ch = $el->cloneNode(true);
-                $ch->removeAttribute('val');
-                $ch->removeAttribute('count');
-                $ch->removeAttribute('lang');
-                $ch->removeAttribute('getLabel');
-                $ch->removeAttribute('asXML');
-                $ch->removeAttribute('dateFormat');
-                $ch->removeAttribute('format');
-                $ch->removeAttribute('valueMapProp');
-                $ch->removeAttribute('valueMapKeepSrc');
                 if ($asXml) {
-                    $df = $ch->ownerDocument->createDocumentFragment();
+                    $df = $el->ownerDocument->createDocumentFragment();
                     $df->appendXML($value);
-                    $ch->appendChild($df);
+                    if ($replaceTag) {
+                        $ch = $df;
+                    }
                 } else {
-                    $ch->textContent = $value . (!empty($value) ? $format : '');
+                    $value = $value . (!empty($value) ? $format : '');
+                    if ($replaceTag) {
+                        $ch = $el->ownerDocument->createTextNode($value);
+                    } else {
+                        $ch = $el->cloneNode(true);
+                        $ch->removeAttribute('val');
+                        $ch->removeAttribute('count');
+                        $ch->removeAttribute('lang');
+                        $ch->removeAttribute('getLabel');
+                        $ch->removeAttribute('asXML');
+                        $ch->removeAttribute('dateFormat');
+                        $ch->removeAttribute('format');
+                        $ch->removeAttribute('valueMapProp');
+                        $ch->removeAttribute('valueMapKeepSrc');
+                        $ch->removeAttribute('replaceXMLTag');
+                        $ch->textContent = $value;
+                    }
                 }
-                if ($lang && $language !== '') {
+                if ($lang && $language !== '' && $ch instanceof DOMElement) {
                     $ch->setAttribute('xml:lang', $language);
                 }
                 $parent->insertBefore($ch, $el);
