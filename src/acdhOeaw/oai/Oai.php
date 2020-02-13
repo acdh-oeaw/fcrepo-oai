@@ -352,7 +352,7 @@ TMPL;
      */
     public function oaiListRecordRaw(string $id = '') {
         try {
-            $this->checkRequestParam(array('identifier', 'metadataPrefix'));
+            $this->checkRequestParam(array('identifier', 'metadataPrefix', 'reloadCache'));
             if($id == '') {
                 throw new OaiException('badArgument');
             }
