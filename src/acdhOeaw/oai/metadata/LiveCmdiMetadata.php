@@ -59,6 +59,7 @@ use acdhOeaw\oai\data\MetadataFormat;
  *   in their metadata are automatically excluded from the OAI-PMH search.
  * - `schemaEnforce` if provided, only resources with a given value of the `schemaProp`
  *   are processed.
+ * - `iiifBaseUrl` used for `val="IIIFURL` (see below)
  * 
  * XML tags in the template can be annotated with following attributes:
  * - `val="valuePath"` specifies how to get the value. Possible `valuePath` variants are:
@@ -70,10 +71,13 @@ use acdhOeaw\oai\data\MetadataFormat;
  *     - `@propUri` in a tag having the `ComponentId` attribute - inject the CMDI component
  *       identified by the `ComponentId` attribute taking the resource `propUri` metadata
  *       property points to as its base resource
- *     - `NOW` - get the current time
- *     - `URL` - get the resource's repository URL
- *     - `ID` - get the resource's ACDH repo UUID
- *     - `OAIURI` - get the resource's OAI-PMH ID
+ *     - `NOW` - current time
+ *     - `URL` - resource's repository URL
+ *     - `ID` - resource's ACDH repo UUID
+ *     - `OAIURI` - resource's OAI-PMH ID
+ *     - `IIIFURL` - resource's IIIF URL which is a concatenation of the metadata format's
+ *       `iiifBaseUrl` parameter value and the path part of the repository resource ID
+ *       (this is a special corner case for ARCHE)
  * - `count="N"` (default `1`)
  *     - when "*" and metadata contain no property specified by the `val` attribute
  *       the tag is removed from the template;
@@ -270,6 +274,10 @@ class LiveCmdiMetadata implements MetadataInterface {
             $id              = urlencode($this->res->getMetadata()->getResource($this->format->uriProp)->getUri());
             $prefix          = urlencode($this->format->metadataPrefix);
             $el->textContent = $this->format->info->baseURL . '?verb=GetRecord&metadataPrefix=' . $prefix . '&identifier=' . $id;
+            $remove          = false;
+        } else if ($val === 'IIIFURL') {
+            $tmp = parse_url($this->res->getId());
+            $el->textContent = $this->format->iiifBaseUrl . $tmp['path'];
             $remove          = false;
         } else if ($val !== '') {
             list('prop' => $prop, 'recursive' => $recursive, 'subprop' => $subprop, 'extUriProp' => $extUriProp, 'inverse' => $inverse) = $this->parseVal($val);
