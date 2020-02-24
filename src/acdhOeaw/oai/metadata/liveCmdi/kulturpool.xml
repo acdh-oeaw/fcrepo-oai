@@ -13,7 +13,7 @@
   <EarliestDate val="/acdh:hasCreatedStartDate" count="*" dateFormat="Date"/>
   <LatestDate val="/acdh:hasCreatedEndDate" count="*" dateFormat="Date"/>
 
-  <Object val="/acdh:hasTitleImage" count="1" format="image/jpeg"/>
+  <Object ComponentId="kulturpoolObject" val="@acdh:hasTitleImage" count="1"/>
 
   <IsShownBy val="/acdh:isSourceOf" format="raw"/>
   <IsShownAt val="/acdh:hasUrl" count="*"/>
