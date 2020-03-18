@@ -5,6 +5,6 @@
   <service>
     <url val="IIIFURL"/>
     <ConformsTo>http://iiif.io/api/image</ConformsTo>
-    <Implements>http://iiif.io/api/image/2/level1.json</Implements>
+    <Implements>http://iiif.io/api/image/2/level2.json</Implements>
   </service>
 </Object>
